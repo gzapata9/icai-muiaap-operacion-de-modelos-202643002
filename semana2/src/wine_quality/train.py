@@ -17,7 +17,7 @@ FEATURES = [
     "pH",
     "sulphates",
     "alcohol",
-]
+] 
 TARGET = "quality"
 RANDOM_STATE = 42
 VALIDATION_SIZE = 0.15
