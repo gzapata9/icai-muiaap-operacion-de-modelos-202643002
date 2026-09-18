@@ -10,3 +10,10 @@
 | [`starter/test_train.py`](starter/test_train.py) | Test inicial para comprobar que el entrenamiento conserva su comportamiento. |
 
 Los assignments contienen todo el recorrido; durante la práctica no hay otra documentación que consultar.
+
+## Comentarios sobre la práctica 2
+### Pasos seguidos:
+- Creada la rama feature/s2-wine-project para trabajar fuera de la rama main
+- Inicializado el paquete e instalado de las dependencias (pandas, scikitlearn, Pytest, Ruff)
+- Ajuste de rutas para los imports
+- Ejecutado el entrenamiento para comprobar el funcionamiento correcto
