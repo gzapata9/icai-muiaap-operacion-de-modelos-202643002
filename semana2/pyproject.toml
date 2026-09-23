@@ -1,0 +1,26 @@
+[project]
+name = "semana2"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "gzapata9", email = "guillermozapata99@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=3.0.6",
+    "scikit-learn>=1.9.1",
+]
+
+[project.scripts]
+semana2 = "semana2:main"
+
+[build-system]
+requires = ["uv_build>=0.12.9,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.8",
+]
