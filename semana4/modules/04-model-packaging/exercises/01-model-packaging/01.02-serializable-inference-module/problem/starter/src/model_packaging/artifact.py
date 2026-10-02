@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
+from src.model_packaging.preprocess import PREPROCESSING_VERSION, FEATURE_NAMES
 
 from model_packaging.contracts import (
     QualityBand,
@@ -62,6 +63,16 @@ def create_manifest(
 ) -> ArtifactManifest:
     """TODO: devuelve un manifiesto compatible con el contrato."""
 
+    return ArtifactManifest(
+        schema_version=ARTIFACT_SCHEMA_VERSION,
+        model_version=model_version,
+        preprocessing_version=PREPROCESSING_VERSION,
+        feature_names=FEATURE_NAMES,
+        output_labels=OUTPUT_LABELS,
+        estimator_type=type(estimator).__name__
+
+    )
+
     raise NotImplementedError("Implementa create_manifest().")
 
 
@@ -71,6 +82,7 @@ def save_model_bundle(
     manifest: ArtifactManifest | None = None,
 ) -> ArtifactManifest:
     """TODO: escribe manifest.json y model.joblib de forma segura."""
+    
 
     raise NotImplementedError("Implementa save_model_bundle().")
 
