@@ -2,80 +2,64 @@
 
 # Declara DEFAULT_MODEL_PATH, load_wine_quality_model() e infer_wine_quality().
 # Comprueba las características del artefacto antes de llamar al clasificador.
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any
+
 import joblib
-from model_inference.preprocess import FEATURE_NAMES, WineFeatures
+
+from model_inference.contracts import WineQualityPrediction
+from model_inference.preprocess import (
+    FEATURE_NAMES,
+    PREPROCESSING_VERSION,
+    WineFeatures,
+)
 
 
-DEFAULT_MODEL_PATH = Path("models/wine_quality_classifier.joblib")
-
-class WineQualityEstimator(Protocol):
-    def predict(self, features: list[list[float]]) -> Sequence[str]:
-        ''''''
-    def predict_proba(self, features: list[list[float]]) -> Sequence[Sequence[float]]:
-        ''''''
-        
+DEFAULT_MODEL_PATH = (
+    Path(__file__).resolve().parents[2] / "model" / "wine_quality_classifier.joblib"
+)
 
 
-@dataclass(frozen=True)
-class LoadedWineModel:
-    estimator: WineQualityEstimator
-    model_version: str
-
-
-def load_wine_quality_model(model_path: Path) -> LoadedWineModel:
-    if not model_path.is_file():
-        raise FileNotFoundError(
-            f"No se encontró el modelo en {model_path}. "
-            "Solicita el artefacto wine_quality_classifier.joblib al profesorado."
-        )
-
-    payload = joblib.load(model_path)
-    if not isinstance(payload, Mapping):
+def load_wine_quality_model(
+    model_path: Path = DEFAULT_MODEL_PATH,
+) -> dict[str, Any]:
+    """Comprueba el contrato de características y la interfaz del estimador."""
+    model = joblib.load(model_path)
+    if not isinstance(model, dict):
         raise ValueError("El artefacto debe contener metadatos y un estimador.")
-
-    artifact_features = tuple(payload.get("feature_names", []))
-    if artifact_features != FEATURE_NAMES:
+    feature_names = model.get("feature_names")
+    if not isinstance(feature_names, (list, tuple)) or (
+        tuple(feature_names) != FEATURE_NAMES
+    ):
         raise ValueError(
             "Los feature_names del artefacto no coinciden con el contrato."
         )
-
-    estimator = payload.get("estimator")
-    model_version = payload.get("model_version")
-    if not isinstance(model_version, str):
-        raise ValueError("El artefacto no declara una versión de modelo válida.")
-    if not hasattr(estimator, "predict") or not hasattr(estimator, "predict_proba"):
+    estimator = model.get("estimator")
+    if not all(
+        callable(getattr(estimator, method, None))
+        for method in ("predict", "predict_proba")
+    ) or not hasattr(estimator, "classes_"):
         raise ValueError("El artefacto no contiene un clasificador compatible.")
+    version = model.get("model_version")
+    if not isinstance(version, str) or not version.strip():
+        raise ValueError("El artefacto no declara un model_version válido.")
+    return model
 
-    return LoadedWineModel(
-        estimator=cast(WineQualityEstimator, estimator),
-        model_version=model_version,
+
+def infer_wine_quality(model: Mapping[str, Any] | None, features: WineFeatures,):
+    """Predice y valida la categoría y su probabilidad para una muestra."""
+    if model is None:
+        model = load_wine_quality_model()
+    vector = [features.as_vector()]
+    estimator = model["estimator"]
+    output_class = estimator.predict(vector)[0]
+    probabilities = estimator.predict_proba(vector)[0]
+    class_index = list(estimator.classes_).index(output_class)
+    confidence = float(probabilities[class_index])
+    return WineQualityPrediction(
+        quality_band=str(output_class),
+        confidence=confidence,
+        model_version=model["model_version"],
+        preprocessing_version=PREPROCESSING_VERSION,
     )
-
-
-def infer_wine_quality(
-    model: LoadedWineModel,
-    features: WineFeatures,
-) -> tuple[str, float]:
-    """Predice la categoría y confianza de una fila ya preprocesada."""
-
-    feature_vector = [features.as_vector()]
-    quality_band = model.estimator.predict(feature_vector)[0]
-    confidence = max(model.estimator.predict_proba(feature_vector)[0])
-    return str(quality_band), round(float(confidence), 2)
-
-
-def artifact_payload(
-    estimator: WineQualityEstimator,
-    model_version: str,
-) -> dict[str, Any]:
-    """Crea el formato que serializa el script de preparación del profesorado."""
-
-    return {
-        "estimator": estimator,
-        "feature_names": list(FEATURE_NAMES),
-        "model_version": model_version,
-    }

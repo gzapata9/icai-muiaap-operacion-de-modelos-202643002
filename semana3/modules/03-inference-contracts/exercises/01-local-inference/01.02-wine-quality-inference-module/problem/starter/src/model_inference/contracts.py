@@ -22,11 +22,8 @@ class WineQualityRequest(BaseModel):
     sulphates: float = Field(ge=0, le=3)
     alcohol: float = Field(ge=5, le=20)
 
-
-QualityBand = Literal["needs_review", "acceptable", "excellent"]
-
 class WineQualityPrediction(BaseModel):
-    quality_band: QualityBand
+    quality_band: Literal["needs_review", "acceptable", "excellent"]
     confidence: float = Field(ge=0, le=1)
     model_version: str
     preprocessing_version: str
