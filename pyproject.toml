@@ -17,3 +17,8 @@ icai-muiaap-operacion-de-modelos-202643002 = "icai_muiaap_operacion_de_modelos_2
 [build-system]
 requires = ["uv_build>=0.12.9,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.workspace]
+members = [
+    "semana7/modules/07-assignments",
+]
