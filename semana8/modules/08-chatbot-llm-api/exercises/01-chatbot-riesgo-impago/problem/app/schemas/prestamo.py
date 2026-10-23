@@ -15,16 +15,15 @@ class PrestamoEntrada(BaseModel):
     antiguedad_laboral_anios: int = Field(ge=0, le=50)
     impagos_previos: int = Field(ge=0, le=20)
 
-
-# TODO: field_validator (con classmethod) para antiguedad_laboral_anios: no puede ser incoherente con la edad.
-@field_validator("antiguedad_laboral_anios", mode="before")
-@classmethod
-def validar_antiguedad_laboral(cls, values):
-    edad = values.get("edad")
-    antiguedad = values.get("antiguedad_laboral_anios")
-    if edad is not None and antiguedad > (edad - 16):
-        raise ValueError("La antigüedad laboral no puede ser mayor que la edad - 16.")
-    return antiguedad
+    # TODO: field_validator (con classmethod) para antiguedad_laboral_anios: no puede ser incoherente con la edad.
+    @field_validator("antiguedad_laboral_anios", mode="before")
+    @classmethod
+    def validar_antiguedad_laboral(cls, valor, info):
+        print(info)
+        edad = info.data.get("edad")
+        if edad is not None and valor > (edad - 16):
+            raise ValueError("La antigüedad laboral no es coherente con la edad.")
+        return valor
 
 
 # TODO: clase PrediccionSalida con probabilidad_impago (entre 0 y 1) y decision (aprobar, revisar o rechazar).
