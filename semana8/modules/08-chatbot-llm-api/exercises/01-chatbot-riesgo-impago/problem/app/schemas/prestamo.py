@@ -8,12 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class PrestamoEntrada(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    edad: int = Field(ge=18, le=75)
-    ingresos_mensuales: float = Field(gt=0)
-    importe_prestamo: float = Field(gt=0)
-    plazo_meses: int = Field(ge=6, le=84)
-    antiguedad_laboral_anios: int = Field(ge=0, le=50)
-    impagos_previos: int = Field(ge=0, le=20)
+    edad: int = Field(ge=18, le=75, description='Edad del solicitante en anios')
+    ingresos_mensuales: float = Field(gt=0, description='Ingresos netos mensuales')
+    importe_prestamo: float = Field(gt=0, description='Import solicitado en Euros')
+    plazo_meses: int = Field(ge=6, le=84, description='Plazo de devolucion en meses')
+    antiguedad_laboral_anios: int = Field(ge=0, le=50, description='Antiguedad laboral en anios del solicitante')
+    impagos_previos: int = Field(ge=0, le=20, description='Cantidad de impagos previos por el solicitante')
 
     # TODO: field_validator (con classmethod) para antiguedad_laboral_anios: no puede ser incoherente con la edad.
     @field_validator("antiguedad_laboral_anios", mode="before")
