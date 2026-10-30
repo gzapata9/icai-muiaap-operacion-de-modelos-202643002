@@ -30,18 +30,75 @@ def leer_argumentos(texto):
 # TODO: definir_tool() -> dict con la definicion de la tool, sacando "parameters" de PrestamoEntrada
 def definir_tool():
     esquema = PrestamoEntrada.model_json_schema()
-    return {"name": NOMBRE_TOOL,
+    return {
+        "type": "function",
+        "function": {
+            "name": NOMBRE_TOOL,
             "description": "Calcula la probabilidad de impago de un prestamo y la decision.",
-            "parameters": esquema
-            }
+            "parameters": esquema,
+        },
+    }
 
 
 # TODO: ejecutar_tool(nombre, argumentos_json) -> dict con "ok" True/False
 #       (tool desconocida, JSON roto, datos invalidos o campos inventados -> ok False con el error)
 def ejecutar_tool(nombre, argumentos_json):
-    if not NOMBRE_TOOL:
-        nombre_tool=False
+    if nombre != NOMBRE_TOOL:
+        return {"ok": False, "error": f"Herramienta desconocida: {nombre}"}
+ 
+    argumentos = leer_argumentos(argumentos_json)
+    try:
+        entrada = PrestamoEntrada.model_validate(argumentos)
+    except ValidationError as e:
+        return {"ok": False, "error": str(e)}
+ 
+    try:
+        resultado = predecir(entrada)
+    except Exception as e:
+        return {"ok": False, "error": f"Error del modelo: {e}"}
+ 
+    return {"ok": True, **resultado.model_dump()}
 
 # TODO: responder(mensajes, llm) -> ChatSalida, con el bucle LLM -> tool -> LLM (maximo MAX_VUELTAS)
+def _a_dict(mensaje):
+    """Acepta tanto objetos Mensaje (Pydantic) como dicts."""
+    if isinstance(mensaje, dict):
+        return {"role": mensaje["role"], "content": mensaje["content"]}
+    return {"role": mensaje.role, "content": mensaje.content}
+ 
+ 
 def responder(mensajes, llm):
-    return None
+    historial = [{"role": "system", "content": SISTEMA}]
+    historial += [_a_dict(m) for m in mensajes]
+    herramientas = [definir_tool()]
+    herramienta_usada = None
+ 
+    for _ in range(MAX_VUELTAS):
+        respuesta = llm.completar(historial, herramientas)
+        llamadas = respuesta.get("tool_calls")
+ 
+        # Sin tool -> el LLM ya ha contestado con texto: hemos terminado
+        if not llamadas:
+            return ChatSalida(respuesta=respuesta.get("content") or "", herramienta=herramienta_usada)
+ 
+        # El mensaje del asistente con las tool_calls tiene que ir al historial antes que los "tool"
+        historial.append(respuesta)
+        for llamada in llamadas:
+            nombre = llamada["function"]["name"]
+            argumentos_json = llamada["function"]["arguments"]
+            resultado = ejecutar_tool(nombre, argumentos_json)
+            historial.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": llamada["id"],
+                    "content": json.dumps(resultado),
+                }
+            )
+            herramienta_usada = HerramientaUsada(
+                nombre=nombre, argumentos=leer_argumentos(argumentos_json), resultado=resultado
+            )
+ 
+    return ChatSalida(
+        respuesta="No he podido completar la solicitud. Prueba a reformularla.",
+        herramienta=herramienta_usada,
+    )

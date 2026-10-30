@@ -19,7 +19,6 @@ class PrestamoEntrada(BaseModel):
     @field_validator("antiguedad_laboral_anios", mode="before")
     @classmethod
     def validar_antiguedad_laboral(cls, valor, info):
-        print(info)
         edad = info.data.get("edad")
         if edad is not None and valor > (edad - 16):
             raise ValueError("La antigüedad laboral no es coherente con la edad.")
