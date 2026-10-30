@@ -77,11 +77,9 @@ def responder(mensajes, llm):
         respuesta = llm.completar(historial, herramientas)
         llamadas = respuesta.get("tool_calls")
  
-        # Sin tool -> el LLM ya ha contestado con texto: hemos terminado
         if not llamadas:
             return ChatSalida(respuesta=respuesta.get("content") or "", herramienta=herramienta_usada)
  
-        # El mensaje del asistente con las tool_calls tiene que ir al historial antes que los "tool"
         historial.append(respuesta)
         for llamada in llamadas:
             nombre = llamada["function"]["name"]
