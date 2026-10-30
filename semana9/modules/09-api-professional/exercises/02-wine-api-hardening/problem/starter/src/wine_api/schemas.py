@@ -84,8 +84,9 @@ class Prediction(BaseModel):
     # Pydantic v2: la decisión pertenece al contrato, no al predictor.
     # Comprobación: tests/test_s9_1_output_contract.py
     @field_serializer("confidence")
-    def round_confidence(self, value: float):
+    def _two_decimals(self, value: float) -> float:
         return round(value, 2)
+
 
 
 class PredictionResponse(BaseModel):
@@ -101,12 +102,10 @@ class PredictionResponse(BaseModel):
                                 json_schema_extra={"format": "date-time"})
  
     @field_serializer("served_at")
-    def serialize_served_at(self, value: datetime):
+    def _utc_z(self, value: datetime) -> str:
+        iso = value.astimezone(UTC).isoformat()
+        return iso.replace("+00:00", "Z")
 
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=UTC)
-        utc_value = value.astimezone(UTC)
-        return utc_value.isoformat(timespec="milliseconds").replace("+00:00", "Z")
  
 
 
