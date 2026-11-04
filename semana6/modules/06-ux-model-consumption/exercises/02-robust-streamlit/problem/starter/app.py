@@ -74,15 +74,75 @@ def collect_values(st: Any) -> tuple[bool, dict[str, float]]:
 
 
 def get_cached_gateway(st: Any, bundle_value: str | None) -> InferenceGateway:
-    """TODO: usa `st.cache_resource` sobre el gateway, no sobre la respuesta."""
+    """Cachea el gateway (recurso compartido), nunca las respuestas.
 
-    raise NotImplementedError("TODO: cachea el gateway heredado de S5")
+    La clave de caché es solo la ruta del bundle: el objeto cacheado no contiene
+    valores del formulario ni resultados de ninguna petición.
+    """
+
+    cached_build = st.cache_resource(build_gateway, show_spinner="Cargando modelo…")
+    return cached_build(bundle_value)
 
 
 def render_state(st: Any, state: UiState, target: Any | None = None) -> None:
-    """TODO: presenta idle/loading/success/error en un target de Streamlit."""
+    """Presenta idle/loading/success/error en un target de Streamlit.
 
-    raise NotImplementedError("TODO: renderiza el estado sin mostrar excepciones")
+    ``target`` suele ser un ``st.empty()``: cada llamada sustituye su contenido.
+    """
+
+    area = target.container() if target is not None else st.container()
+    with area:
+        if state.phase == "idle":
+            st.info(
+                "Ajusta las 11 características del vino y pulsa "
+                "«Ejecutar inferencia» para obtener una predicción."
+            )
+        elif state.phase == "loading":
+            st.info(f"Ejecutando inferencia… (request_id: {state.request_id})")
+        elif state.phase == "success" and state.view is not None:
+            _render_success(st, state)
+        elif state.phase == "error" and state.error is not None:
+            _render_error(st, state)
+        else:
+            st.warning("Estado no reconocido. Pulsa «Limpiar último resultado».")
+
+
+def _render_success(st: Any, state: UiState) -> None:
+    view = state.view
+    assert view is not None
+    quality_column, confidence_column, latency_column = st.columns(3)
+    quality_column.metric("Categoría", view.quality_label)
+    confidence_column.metric(
+        "Confianza del modelo", f"{view.confidence:.0%}", help=view.confidence_label
+    )
+    latency_column.metric(
+        "Latencia", f"{view.latency_ms:.0f} ms", help=view.latency_label
+    )
+
+    confidence_text = f"**{view.confidence_label}.** {view.confidence_message}"
+    if view.confidence_level == "low":
+        st.warning(confidence_text)
+    else:
+        st.info(confidence_text)
+    if view.latency_status == "above_target":
+        st.warning(f"**{view.latency_label}.** {view.latency_message}")
+
+    with st.expander("Detalles técnicos"):
+        st.markdown(
+            f"- quality_band: `{view.quality_band}`\n"
+            f"- model_version: `{view.model_version}`\n"
+            f"- preprocessing_version: `{view.preprocessing_version}`\n"
+            f"- request_id: `{state.request_id}`"
+        )
+
+
+def _render_error(st: Any, state: UiState) -> None:
+    error = state.error
+    assert error is not None
+    st.error(f"**{error.title}.** {error.message}")
+    st.info(f"**Cómo seguir:** {error.recovery}")
+    with st.expander("Detalles para soporte"):
+        st.markdown(f"- código: `{error.code}`\n- request_id: `{error.request_id}`")
 
 
 def main() -> None:
@@ -115,6 +175,7 @@ def main() -> None:
                 emit=lambda event: render_state(st, event, state_slot),
             )
             st.session_state[LAST_STATE_KEY] = state
+            state_slot.empty()
             status.update(
                 label=(
                     "Inferencia completada"
