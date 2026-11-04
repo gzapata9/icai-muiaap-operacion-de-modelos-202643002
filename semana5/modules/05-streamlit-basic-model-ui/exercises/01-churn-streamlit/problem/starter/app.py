@@ -7,20 +7,53 @@ from churn_demo.model import ChurnPrediction, predict
 
 Predictor = Callable[..., ChurnPrediction]
 
+ERROR_MESSAGE = (
+    "No se pudo calcular el riesgo con estos valores. Revisa que estén dentro de "
+    "los rangos del formulario y vuelve a pulsar 'Calcular riesgo'."
+)
+
 
 def collect_profile(st: Any) -> tuple[bool, dict[str, object]]:
     """Renderiza cuatro widgets dentro de un único formulario."""
     # TODO 1 (alumno): usa st.form("churn_form"), los cuatro widgets con las
     # claves indicadas en el README y st.form_submit_button. El formulario evita
     # inferencias durante cada edición. Compruébalo con el primer test de app.
-    raise NotImplementedError("STUDENT TASK: construye el formulario Churn")
+    with st.form("churn_form"):
+        values: dict[str, object] = {
+            "tenure_months": st.slider(
+                "Antigüedad (meses)", 0, 120, 12, key="tenure_months"
+            ),
+            "monthly_spend_eur": st.number_input(
+                "Gasto mensual (EUR)",
+                min_value=0.0,
+                max_value=300.0,
+                value=60.0,
+                step=5.0,
+                key="monthly_spend_eur",
+            ),
+            "support_calls": st.slider(
+                "Llamadas a soporte", 0, 20, 1, key="support_calls"
+            ),
+            "has_annual_contract": st.checkbox(
+                "Contrato anual", value=False, key="has_annual_contract"
+            ),
+        }
+        submitted = bool(st.form_submit_button("Calcular riesgo"))
+    return submitted, values
+    # raise NotImplementedError("STUDENT TASK: construye el formulario Churn")
 
 
 def render_prediction(st: Any, result: ChurnPrediction) -> None:
     """Muestra etiqueta, score orientativo y explicación."""
     # TODO 3 (alumno): presenta label, risk_score y explanation con componentes
     # Streamlit. No recalcules el score. Compruébalo con el test de presentación.
-    raise NotImplementedError("STUDENT TASK: presenta la predicción")
+    if result["will_churn"]:
+        st.warning(result["label"])
+    else:
+        st.success(result["label"])
+    st.metric("Score de riesgo (orientativo, umbral 0,50)", result["risk_score"])
+    st.write(result["explanation"])
+    # raise NotImplementedError("STUDENT TASK: presenta la predicción")
 
 
 def run_app(st: Any, predictor: Predictor) -> None:
@@ -28,7 +61,19 @@ def run_app(st: Any, predictor: Predictor) -> None:
     # TODO 2 (alumno): llama a collect_profile, ejecuta predictor(**values) solo
     # tras el submit y una única vez; convierte ValueError en un mensaje seguro.
     # Los tests de 0/1 llamadas y de error verifican este contrato.
-    raise NotImplementedError("STUDENT TASK: conecta el submit con predict()")
+    submitted, values = collect_profile(st)
+    if not submitted:
+        st.info("Ajusta los valores y pulsa «Calcular riesgo» para ver el resultado.")
+        return
+ 
+    try:
+        result = predictor(**values)
+    except ValueError:
+        st.error(ERROR_MESSAGE)
+        return
+ 
+    render_prediction(st, result)
+    # raise NotImplementedError("STUDENT TASK: conecta el submit con predict()")
 
 
 def main() -> None:
