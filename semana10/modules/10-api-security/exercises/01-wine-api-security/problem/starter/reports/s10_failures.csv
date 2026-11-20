@@ -1,0 +1,3 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+POST,/v1/predictions,HTTPError('429 Client Error: Too Many Requests for url: /v1/predictions'),632,2026-11-20T19:41:13Z,2026-11-20T19:42:07Z
+POST,/v1/predictions [422],CatchResponseError('Esperaba 422 y llegó 429'),85,2026-11-20T19:41:13Z,2026-11-20T19:42:07Z
