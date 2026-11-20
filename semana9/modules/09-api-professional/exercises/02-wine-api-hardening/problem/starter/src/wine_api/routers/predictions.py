@@ -1,12 +1,17 @@
-from dataclasses import asdict
+from datetime import UTC, datetime
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Body
 from fastapi.openapi.models import Example
 
 from wine_api.dependencies import PredictorDep, RequestIdDep
-from wine_api.schemas import PredictionRequest, ErrorResponse, VALID_FEATURES_EXAMPLE, PredictionResponse, Prediction
-
-from datetime import UTC, datetime
+from wine_api.schemas import (
+    VALID_FEATURES_EXAMPLE,
+    ErrorResponse,
+    Prediction,
+    PredictionRequest,
+    PredictionResponse,
+)
 
 # TODO S9.3a: mueve aquí `prefix="/v1/predictions"` y `tags=["predictions"]`.
 # TODO S9.3c: declara a nivel de router `responses=` para 400, 422 y 503 con
@@ -44,48 +49,57 @@ PREDICTION_EXAMPLES: dict[str, Example] = {
     "valid": {
         "summary": "Vino tinto válido",
         "description": "Las once variables dentro de rango: responde 200.",
-        "value": {"features": VALID_FEATURES_EXAMPLE}
-        },
+        "value": {"features": VALID_FEATURES_EXAMPLE},
+    },
     "out_of_range": {
         "summary": "Inválido: alcohol fuera de rango",
         "description": "`alcohol` debe estar entre 5 y 20: responde 422.",
-        "value": {"features": {**VALID_FEATURES_EXAMPLE, "alcohol": 25.0}}
-        },
+        "value": {"features": {**VALID_FEATURES_EXAMPLE, "alcohol": 25.0}},
+    },
     "missing_and_extra": {
         "summary": "Inválido: falta un campo y sobra otro",
         "description": (
             "Sin `ph` y con un campo desconocido `color`: responde 422 con "
             "un error por campo."
-            ),
+        ),
         "value": {
             "features": {
                 **{k: v for k, v in VALID_FEATURES_EXAMPLE.items() if k != "ph"},
-                "color": "red"
-                }
-            },
+                "color": "red",
+            }
         },
+    },
     "wrong_type": {
         "summary": "Inválido: texto en lugar de número",
         "description": 'Los campos son numéricos y estrictos: `"9.4"` responde 422.',
-        "value": {"features": {**VALID_FEATURES_EXAMPLE, "alcohol": "9.4"}}
-        }
-    }
+        "value": {"features": {**VALID_FEATURES_EXAMPLE, "alcohol": "9.4"}},
+    },
+}
+
 
 @router.post(
-   "/v1/predictions",
+    "",
     summary="Predecir la banda de calidad de un vino tinto",
     response_description="Predicción pública con trazabilidad del modelo.",
 )
+def create_prediction(
+    payload: Annotated[PredictionRequest, Body(openapi_examples=PREDICTION_EXAMPLES)],
+    predictor: PredictorDep,
+    request_id: RequestIdDep,
+) -> PredictionResponse:
+    """Estima la banda de calidad de un vino tinto a partir de once variables.
 
-def create_prediction(payload: PredictionRequest,predictor: PredictorDep,
-                      request_id: RequestIdDep,)-> PredictionResponse:
-    
+    - Todas las variables de `features` son obligatorias, numéricas y con rangos
+      inclusivos; los campos desconocidos se rechazan con `422`.
+    - `prediction.confidence` está entre 0 y 1 y se expone con dos decimales.
+    - `served_at` es la hora de servicio en UTC (ISO 8601 con sufijo `Z`).
+    - `request_id` coincide con la cabecera `X-Request-Id`: cítalo al reportar
+      una incidencia.
+    """
+
     output = predictor.predict(payload.features)
-    # TODO S9.1e: este dict expone `raw_score` y la confianza sin redondear.
-    # Declara `-> PredictionResponse` y construye el modelo; para pasar de la
-    # dataclass ModelOutput a Prediction investiga `from_attributes=True`.
     return PredictionResponse(
-            prediction=Prediction.model_validate(output),
-            request_id=request_id,
-            served_at=datetime.now(UTC),
-        )
+        prediction=Prediction.model_validate(output),
+        request_id=request_id,
+        served_at=datetime.now(UTC),
+    )

@@ -65,40 +65,62 @@ def field_path(loc: Sequence[Any]) -> str:
 async def handle_validation_error(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
-    # TODO S9.2a: FastAPI responde 422 con {"detail": [...]}, que no es nuestro
-    # contrato. Recorre `exc.errors()`: cada error trae `type`, `loc` y `msg`.
-    # - Si algún `type` es "json_invalid", el cuerpo no es JSON: 400 con
-    #   `ErrorCode.INVALID_JSON` y sin `fields`.
-    # - Si no, 422 con `ErrorCode.VALIDATION_ERROR` y una lista de FieldError
-    #   (usa `field_path`). Nunca copies `input`: puede contener datos del
-    #   usuario. Comprobación: tests/test_s9_2_errors.py
-    raise NotImplementedError("TODO S9.2a")
+    """422 con un `FieldError` por campo, o 400 si el cuerpo no es JSON."""
+
+    errors = exc.errors()
+    if any(error.get("type") == "json_invalid" for error in errors):
+        return error_response(
+            request, 400, ErrorCode.INVALID_JSON, "Request body is not valid JSON"
+        )
+    # Nunca se copia `input`: puede contener datos del usuario.
+    fields = [
+        FieldError(field=field_path(error.get("loc", ())), message=error["msg"])
+        for error in errors
+    ]
+    return error_response(
+        request,
+        422,
+        ErrorCode.VALIDATION_ERROR,
+        "Request body does not match the contract",
+        fields,
+    )
 
 
 async def handle_api_error(request: Request, exc: WineApiError) -> JSONResponse:
-    # TODO S9.2b: traduce cualquier WineApiError usando los atributos de clase
-    # `status_code`, `code` y `message`. Una línea con `error_response`.
-    raise NotImplementedError("TODO S9.2b")
+    """Traduce un error de dominio con sus atributos de clase."""
+
+    return error_response(request, exc.status_code, exc.code, exc.message)
 
 
 async def handle_http_exception(
     request: Request, exc: StarletteHTTPException
 ) -> JSONResponse:
-    # TODO S9.2c: 404 y 405 los genera Starlette, no tus rutas. Busca el código
-    # en HTTP_ERROR_CODES (ErrorCode.HTTP_ERROR si no está) y responde con el
-    # mismo sobre. ¿Por qué se registra la clase de Starlette y no la de FastAPI?
-    raise NotImplementedError("TODO S9.2c")
+    """404/405 de Starlette con el mismo sobre que el resto de errores.
+
+    Se registra la clase de Starlette porque es la base: así se capturan también
+    los errores que el enrutador genera antes de llegar a FastAPI.
+    """
+
+    code, message = HTTP_ERROR_CODES.get(
+        exc.status_code, (ErrorCode.HTTP_ERROR, "HTTP error")
+    )
+    return error_response(request, exc.status_code, code, message)
 
 
 async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
-    # TODO S9.2d: último recurso. Registra el detalle con `logger.exception`
-    # (incluye el request_id) y devuelve 500 `internal_error` con un mensaje
-    # genérico. El texto de `exc` nunca sale en la respuesta.
-    raise NotImplementedError("TODO S9.2d")
+    """Último recurso: registra el detalle y responde un 500 genérico."""
+
+    request_id = current_request_id(request)
+    logger.exception("Unexpected error (request_id=%s)", request_id)
+    return error_response(
+        request, 500, ErrorCode.INTERNAL_ERROR, "Unexpected server error"
+    )
 
 
 def install_error_handlers(app: FastAPI) -> None:
-    # TODO S9.2e: registra los cuatro manejadores con `app.add_exception_handler`
-    # cuando estén implementados. Hasta entonces la API usa los errores por
-    # defecto de FastAPI ({"detail": ...}), que es justo lo que queremos cambiar.
-    return None
+    """Registra los cuatro manejadores del sobre común."""
+
+    app.add_exception_handler(RequestValidationError, handle_validation_error)
+    app.add_exception_handler(WineApiError, handle_api_error)
+    app.add_exception_handler(StarletteHTTPException, handle_http_exception)
+    app.add_exception_handler(Exception, handle_unexpected_error)
