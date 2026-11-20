@@ -1,9 +1,10 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends
 
 from wine_api.dependencies import PredictorDep, RequestIdDep
+from wine_api.rate_limit import enforce_rate_limit
 from wine_api.schemas import (
     VALID_FEATURES_EXAMPLE,
     ErrorResponse,
@@ -11,6 +12,7 @@ from wine_api.schemas import (
     PredictionRequest,
     PredictionResponse,
 )
+from wine_api.security import require_scope
 
 PREDICTION_EXAMPLES = {
     "valid": {
@@ -42,11 +44,31 @@ PREDICTION_EXAMPLES = {
 router = APIRouter(
     prefix="/v1/predictions",
     tags=["predictions"],
+    # Orden: autenticar + autorizar y, solo después, contar la cuota.
+    dependencies=[Depends(require_scope("predict")), Depends(enforce_rate_limit)],
     responses={
         400: {"model": ErrorResponse, "description": "El cuerpo no es JSON válido."},
         422: {
             "model": ErrorResponse,
             "description": "JSON válido que incumple campos, tipos o rangos.",
+        },
+        401: {
+            "model": ErrorResponse,
+            "description": "Falta `X-API-Key` o no es válida (`unauthorized`).",
+        },
+        403: {
+            "model": ErrorResponse,
+            "description": "La clave no tiene el scope `predict` (`forbidden`).",
+        },
+        429: {
+            "model": ErrorResponse,
+            "description": "Cuota por minuto agotada (`rate_limited`).",
+            "headers": {
+                "Retry-After": {
+                    "description": "Segundos que hay que esperar antes de reintentar.",
+                    "schema": {"type": "integer"},
+                }
+            },
         },
         503: {"model": ErrorResponse, "description": "El modelo no está cargado."},
     },
@@ -70,6 +92,8 @@ def create_prediction(
     - Los rangos son inclusivos y están en el esquema `WineFeatures`.
     - `confidence` se devuelve con dos decimales.
     - Guarda `request_id` si necesitas reportar una incidencia.
+    - Requiere `X-API-Key` con scope `predict`; cada respuesta indica la cuota
+      restante en `X-RateLimit-Remaining`.
     """
 
     output = predictor.predict(payload.features)

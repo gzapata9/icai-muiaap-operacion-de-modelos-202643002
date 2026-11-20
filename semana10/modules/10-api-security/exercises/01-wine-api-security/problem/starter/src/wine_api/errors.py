@@ -35,6 +35,11 @@ class WineApiError(Exception):
     # `error_response` y que esta las copie SIN perder `X-Request-Id`.
     # `ModelUnavailableError()` debe seguir funcionando sin argumentos.
     # Comprobación: tests/test_s10_2_authentication.py (WWW-Authenticate).
+    default_headers: dict[str, str] = {}
+
+    def __init__(self, headers: dict[str, str] | None = None) -> None:
+        super().__init__(self.message)
+        self.headers = {**self.default_headers, **(headers or {})}
 
 
 class ModelUnavailableError(WineApiError):
@@ -47,11 +52,41 @@ class ModelUnavailableError(WineApiError):
 # cabecera `WWW-Authenticate: ApiKey`). Usa el mismo mensaje cuando falta la
 # clave y cuando es incorrecta: ¿qué ganaría un atacante si fueran distintos?
 #
+class AuthenticationError(WineApiError):
+    """Falta la API key o no es válida. Mismo mensaje en ambos casos."""
+
+    status_code = 401
+    code = ErrorCode.UNAUTHORIZED
+    message = "Missing or invalid API key"
+    default_headers = {"WWW-Authenticate": "ApiKey"}
+
+
 # TODO S10.3a: crea `PermissionDeniedError` (403, `ErrorCode.FORBIDDEN`).
 #
+class PermissionDeniedError(WineApiError):
+    """El cliente está autenticado pero no tiene el scope necesario."""
+
+    status_code = 403
+    code = ErrorCode.FORBIDDEN
+    message = "The API key does not grant access to this resource"
+
+
 # TODO S10.4a: crea `RateLimitExceededError` (429, `ErrorCode.RATE_LIMITED`).
 # Recibe los segundos de espera y produce `Retry-After` (entero, en segundos)
 # y, si quieres, `X-RateLimit-Limit` y `X-RateLimit-Remaining: 0`.
+class RateLimitExceededError(WineApiError):
+    """El cliente ha agotado su cuota en la ventana actual."""
+
+    status_code = 429
+    code = ErrorCode.RATE_LIMITED
+    message = "Rate limit exceeded; retry after the indicated seconds"
+
+    def __init__(self, retry_after: int, limit: int | None = None) -> None:
+        headers = {"Retry-After": str(retry_after), "X-RateLimit-Remaining": "0"}
+        if limit is not None:
+            headers["X-RateLimit-Limit"] = str(limit)
+        super().__init__(headers=headers)
+        self.retry_after = retry_after
 
 
 def error_response(
@@ -60,6 +95,7 @@ def error_response(
     code: ErrorCode,
     message: str,
     fields: list[FieldError] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     """Construye el sobre de error; `fields` desaparece si no aplica."""
 
@@ -71,7 +107,7 @@ def error_response(
     return JSONResponse(
         status_code=status_code,
         content=body.model_dump(mode="json", exclude_none=True),
-        headers={REQUEST_ID_HEADER: request_id},
+        headers={**(headers or {}), REQUEST_ID_HEADER: request_id},
     )
 
 
@@ -104,7 +140,9 @@ async def handle_validation_error(
 
 
 async def handle_api_error(request: Request, exc: WineApiError) -> JSONResponse:
-    return error_response(request, exc.status_code, exc.code, exc.message)
+    return error_response(
+        request, exc.status_code, exc.code, exc.message, headers=exc.headers
+    )
 
 
 async def handle_http_exception(

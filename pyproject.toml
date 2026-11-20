@@ -21,4 +21,5 @@ build-backend = "uv_build"
 [tool.uv.workspace]
 members = [
     "semana7/modules/07-assignments",
+    "practicas-examen/p01-proyecto-uv/reseervas",
 ]

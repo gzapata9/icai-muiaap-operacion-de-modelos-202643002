@@ -6,15 +6,16 @@ producción el estado va a Redis o el límite lo aplica el API gateway.
 """
 
 import logging
-import math  # noqa: F401 - pista para S10.4b
+import math
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, Request, Response  # noqa: F401 - pista para S10.4c
+from fastapi import Depends, Request, Response
 
+from wine_api.errors import RateLimitExceededError
 from wine_api.security import ClientDep
 
 logger = logging.getLogger("wine_api.rate_limit")
@@ -60,7 +61,23 @@ class FixedWindowRateLimiter:
         # Usa `self.clock()`, nunca `time.time()`: así los tests controlan el
         # reloj. Mira `usage()` para ver cómo se lee `_windows`.
         # Comprobación: los tres primeros tests de tests/test_s10_4_rate_limit.py
-        raise NotImplementedError("TODO S10.4b")
+        with self._lock:
+            now = self.clock()
+            start, count = self._windows.get(key, (now, 0))
+            if now - start >= self.window_seconds:
+                start, count = now, 0
+            if count >= limit:
+                # Hacia arriba: reintentar antes de que acabe la ventana daría otro 429.
+                retry_after = max(1, math.ceil(start + self.window_seconds - now))
+                self._windows[key] = (start, count)
+                return RateLimitDecision(
+                    allowed=False, remaining=0, retry_after=retry_after
+                )
+            count += 1
+            self._windows[key] = (start, count)
+            return RateLimitDecision(
+                allowed=True, remaining=limit - count, retry_after=0
+            )
 
     def usage(self, key: str) -> int:
         """Peticiones contadas para `key` en la ventana actual."""
@@ -81,7 +98,9 @@ def get_rate_limiter(request: Request) -> FixedWindowRateLimiter:
 RateLimiterDep = Annotated[FixedWindowRateLimiter, Depends(get_rate_limiter)]
 
 
-def enforce_rate_limit(client: ClientDep, limiter: RateLimiterDep) -> None:
+def enforce_rate_limit(
+    client: ClientDep, limiter: RateLimiterDep, response: Response
+) -> None:
     """Cuenta la petición del cliente autenticado o lanza un `429`."""
 
     # TODO S10.4c: cuenta la petición con `limiter.hit(...)` usando el nombre
@@ -93,4 +112,10 @@ def enforce_rate_limit(client: ClientDep, limiter: RateLimiterDep) -> None:
     #   `response: Response`.
     # ¿Por qué esta dependencia va DESPUÉS de autenticar y autorizar?
     # Comprobación: uv run pytest -q tests/test_s10_4_rate_limit.py
-    raise NotImplementedError("TODO S10.4c")
+    limit = client.rate_limit_per_minute
+    decision = limiter.hit(client.name, limit)
+    if not decision.allowed:
+        logger.info("Rate limit exceeded for client %s", client.name)
+        raise RateLimitExceededError(retry_after=decision.retry_after, limit=limit)
+    response.headers["X-RateLimit-Limit"] = str(limit)
+    response.headers["X-RateLimit-Remaining"] = str(decision.remaining)

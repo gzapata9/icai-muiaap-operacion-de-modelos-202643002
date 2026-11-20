@@ -153,6 +153,9 @@ class ErrorCode(StrEnum):
     # `unauthorized`, `forbidden` y `rate_limited`. Un cliente programa contra
     # `error.code`: ¿qué haría el front con cada uno (pedir clave, avisar de
     # permisos, esperar `Retry-After`)?
+    UNAUTHORIZED = "unauthorized"
+    FORBIDDEN = "forbidden"
+    RATE_LIMITED = "rate_limited"
     MODEL_UNAVAILABLE = "model_unavailable"
     INTERNAL_ERROR = "internal_error"
 

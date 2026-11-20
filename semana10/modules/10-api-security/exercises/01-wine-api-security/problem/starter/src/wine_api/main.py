@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware  # noqa: F401 - pista para S10.5a
+from fastapi.middleware.cors import CORSMiddleware
 
 from wine_api.errors import install_error_handlers
 from wine_api.predictor import Predictor, build_predictor
@@ -20,7 +20,8 @@ from wine_api.settings import Settings
 # Después regenera el contrato (S10.6c):
 #   uv run python -m wine_api.export_openapi && git diff contracts/openapi.json
 # Comprobación: tests/test_s10_6_openapi.py
-API_VERSION = "1.1.0"
+# 2.0.0: exigir `X-API-Key` rompe a los clientes anónimos de 1.x (cambio mayor).
+API_VERSION = "2.0.0"
 
 API_DESCRIPTION = """
 Servicio de inferencia del proyecto **Wine Quality** de Operación de Modelos.
@@ -29,11 +30,29 @@ Servicio de inferencia del proyecto **Wine Quality** de Operación de Modelos.
 - Todos los errores comparten el sobre `ErrorResponse`; programa contra
   `error.code`, no contra `error.message`.
 - La predicción es determinista y docente: no es una garantía de calidad.
+
+## Autenticación y scopes
+
+Las operaciones de `/v1/...` exigen la cabecera `X-API-Key` (botón
+**Authorize** en `/docs`). Sin clave o con una clave incorrecta la API responde
+`401 unauthorized`. Cada clave tiene scopes: `predict` permite predecir y
+`admin` consultar el consumo en `GET /v1/admin/usage`; sin el scope necesario
+la respuesta es `403 forbidden`. `GET /health` es público.
+
+## Límite de peticiones
+
+Cada cliente tiene una cuota por minuto. Las respuestas permitidas incluyen
+`X-RateLimit-Limit` y `X-RateLimit-Remaining`; al superarla la API responde
+`429 rate_limited` con la cabecera `Retry-After` (segundos enteros).
 """
 
 OPENAPI_TAGS = [
     {"name": "health", "description": "Disponibilidad del servicio y del modelo."},
     {"name": "predictions", "description": "Inferencia de calidad de vino tinto."},
+    {
+        "name": "admin",
+        "description": "Operación del servicio: consumo por cliente (scope `admin`).",
+    },
 ]
 
 
@@ -55,12 +74,17 @@ def create_app(
     # `/openapi.json` deben responder 404. Investiga los parámetros `docs_url`,
     # `redoc_url` y `openapi_url` de `FastAPI(...)`. ¿Desactivar la
     # documentación protege la API o solo reduce lo que se anuncia?
+    # Ocultar la documentación no protege nada: solo deja de anunciar el contrato.
+    docs = settings.docs_enabled
     app = FastAPI(
         title="Wine Quality API",
         version=API_VERSION,
         summary="Predicción de la banda de calidad de vinos tintos.",
         description=API_DESCRIPTION,
         openapi_tags=OPENAPI_TAGS,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
         lifespan=lifespan,
     )
     app.state.settings = settings
@@ -75,6 +99,16 @@ def create_app(
     # no debe pasar por la autenticación? Pista: el último middleware que se
     # añade es el más externo.
     # Comprobación: uv run pytest -q tests/test_s10_5_cors.py
+    # CORS se añade el último para ser el middleware más externo: el preflight
+    # `OPTIONS` se responde aquí, sin pasar por la autenticación.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "X-API-Key"],
+        allow_credentials=False,
+        expose_headers=["X-Request-Id", "Retry-After", "X-RateLimit-Remaining"],
+    )
     install_error_handlers(app)
     app.include_router(health.router)
     app.include_router(predictions.router)
